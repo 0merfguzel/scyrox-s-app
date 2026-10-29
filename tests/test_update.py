@@ -86,6 +86,13 @@ class CheckerTests(unittest.TestCase):
         self.c._deliver("check-error", "timeout")
         self.assertEqual(self.events, [("failed", "check")])
 
+    def test_manual_request_during_automatic_check_is_answered(self):
+        with mock.patch.object(self.c, "_run"):
+            self.c.check()                       # açılıştaki otomatik denetim
+            self.c.check(manual=True)            # o sürerken kullanıcı bastı
+        self.c._deliver("check", U.Release(U.__version__, "page", None))
+        self.assertEqual(self.events, [("latest",)])
+
     def test_download_errors_always_reported(self):
         self.c._deliver("download-error", "boom")
         self.assertEqual(self.events, [("failed", "download")])

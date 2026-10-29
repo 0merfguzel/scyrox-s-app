@@ -913,10 +913,16 @@ class SettingsWindow(QWidget):
         short = {"apply": tr("Settings applied") if ok else tr("Could not apply"),
                  "reset": tr("Mouse reset") if ok else tr("Could not reset"),
                  "refresh": tr("Refreshed") if ok else tr("Could not refresh")}[op]
-        self.status_lbl.setStyleSheet("color: #3fae5a;" if kind == "ok" else "color: #e05a4f;")
-        self.status_lbl.set_full_text(short)
-        self.status_lbl.setToolTip("" if kind == "ok" else text)
-        if kind == "ok":
+        self.show_note(short, ok, "" if ok else text)
+
+    def show_note(self, text: str, ok: bool, detail: str = "") -> None:
+        """Alt satırda kısa sonuç (yeşil / kırmızı). Fare işlemleri dışında
+        güncelleme denetiminin sonucu için de kullanılır: Windows'ta "Rahatsız
+        etmeyin" açıksa bildirimler görünmez, pencereden sorulan cevapsız kalmasın."""
+        self.status_lbl.setStyleSheet("color: #3fae5a;" if ok else "color: #e05a4f;")
+        self.status_lbl.set_full_text(text)
+        self.status_lbl.setToolTip(detail)
+        if ok:
             self._msg_timer.start(MESSAGE_MS)
         else:
             self._msg_timer.stop()      # hata, bir sonraki işleme kadar görünür kalır

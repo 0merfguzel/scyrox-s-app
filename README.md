@@ -41,9 +41,11 @@ yanındaki tepsiye yerleşir; ilk açılışta kısa bir tanıtım gösterir.
   kayıttaki yol açılışta güncellenir. Uygulama tek kopya çalışır (ikinci kez açılırsa hemen kapanır).
 - **Güncellemeler:** Açılışta (ve tepsi menüsü açılınca) en fazla günde bir kez GitHub'daki son yayına
   bakılır; uygulamanın internete çıktığı tek yer budur. Uygulama ayarları → Güncellemeleri otomatik
-  denetle ile kapatılır, Güncellemeleri denetle ile elle sorulur. Yeni sürüm varsa bildirim gelir ve
-  tepsi menüsünde "Güncellemeyi kur" görünür: kurulum dosyası indirilir, sessizce kurulur ve uygulama
-  yeniden açılır (Windows yönetici izni sorar). Kurulumsuz (zip) sürümde yalnızca yayın sayfası açılır.
+  denetle ile kapatılır, Güncellemeleri denetle ile elle sorulur (cevap pencerenin alt satırında; yeni
+  sürüm varsa kurulsun mu diye sorulur). Otomatik denetim yeni sürüm bulunca bildirim gelir ve tepsi
+  menüsünde "Güncellemeyi kur" görünür; Windows'ta "Rahatsız etmeyin" açıksa bildirim görünmez ama menü
+  satırı yine çıkar. Kurulum dosyası indirilir, sessizce kurulur ve uygulama yeniden açılır (Windows
+  yönetici izni sorar). Kurulumsuz (zip) sürümde yalnızca yayın sayfası açılır.
 - **Pencere yeri:** Tüm ayarlar, tepsi ikonunun bulunduğu köşede açılır (görev çubuğu üstteyse sağ üst,
   alttaysa sağ alt). Küçük ekranlarda ayarlar kaydırılabilir.
 - **Güvenlik:**

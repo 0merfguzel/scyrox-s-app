@@ -48,6 +48,18 @@ class TrayTests(unittest.TestCase):
         self.assertEqual(w.dpi_cards[0].spin.value(), 500)
         self.assertTrue(w.apply_btn.isEnabled())
 
+    def test_update_result_shown_in_window_when_asked_there(self):
+        """Pencereden denetlenince cevap pencerede (bildirim "Rahatsız etmeyin"de görünmez)."""
+        self.tray.open_settings()
+        with mock.patch.object(self.tray.updater, "check"), mock.patch.object(self.tray, "_notify") as toast:
+            self.tray.check_updates(manual=True)
+            self.tray._on_up_to_date()
+            toast.assert_not_called()
+            self.assertEqual(self.tray.window.status_lbl.toolTip(), "")
+            self.assertIn("Güncel", self.tray.window.status_lbl._full)
+            self.tray._on_up_to_date()           # pencereden sorulmadan gelen sonuç: bildirim
+            toast.assert_called_once()
+
     def test_automatic_language_follows_system(self):
         with mock.patch.object(i18n.prefs, "set_language"), \
                 mock.patch.object(i18n, "system_language", return_value="ja"):

@@ -114,4 +114,6 @@ STRINGS = {
     'Scyrox S-App is up to date ({v})': 'Scyrox S-App가 최신 버전입니다({v})',
     'Could not check for updates': '업데이트를 확인할 수 없습니다',
     'Could not download the update': '업데이트를 다운로드할 수 없습니다',
+    'Up to date ({v})': '최신 버전({v})',
+    'Version {v} is available. Install now?': '{v} 버전을 사용할 수 있습니다. 지금 설치할까요?',
 }

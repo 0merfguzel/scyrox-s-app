@@ -9,7 +9,7 @@ from typing import Optional
 
 from PyQt6.QtCore import QDir, QLockFile, QPoint, QRect, QTimer, QUrl
 from PyQt6.QtGui import QAction, QActionGroup, QDesktopServices, QGuiApplication, QPalette, QPixmap
-from PyQt6.QtWidgets import QApplication, QMenu, QSystemTrayIcon, QWidget
+from PyQt6.QtWidgets import QApplication, QMenu, QMessageBox, QSystemTrayIcon, QWidget
 
 from . import __version__, autostart, prefs
 from . import device as d
@@ -58,6 +58,7 @@ class Tray:
         self._welcome: Optional[WelcomeDialog] = None
         self.release: Optional[update.Release] = None    # bulunan yeni sürüm
         self._balloon = ""                                # son bildirimin türü (tıklanınca)
+        self._from_window = False                         # denetim ayarlar penceresinden istendi
 
         self.tray = QSystemTrayIcon(model_icon(None))
         self.tray.activated.connect(self._on_activated)
@@ -246,7 +247,15 @@ class Tray:
     # ---- güncelleme -------------------------------------------------------
 
     def check_updates(self, manual: bool = False) -> None:
+        self._from_window = manual
         self.updater.check(manual)
+
+    def _answer_window(self) -> Optional[SettingsWindow]:
+        """Pencereden sorulduysa ve pencere açıksa cevap orada verilir (bildirim
+        "Rahatsız etmeyin" açıkken görünmez); yoksa bildirimle."""
+        w = self.window if self._from_window and self.window is not None and self.window.isVisible() else None
+        self._from_window = False
+        return w
 
     def _show_update(self, downloading: bool = False) -> None:
         rel = getattr(self, "release", None)       # tanıtım görüntüsünde yok
@@ -260,16 +269,29 @@ class Tray:
         known = self.release is not None and self.release.version == rel.version
         self.release = rel
         self._show_update()
-        if not known:
+        w = self._answer_window()
+        if w is not None:
+            answer = QMessageBox.question(w, "Scyrox S-App", tr("Version {v} is available. Install now?", v=rel.version))
+            if answer == QMessageBox.StandardButton.Yes:
+                self.install_update()
+        elif not known:
             self._notify(tr("Version {v} is available. Click to install.", v=rel.version), kind="update")
 
     def _on_up_to_date(self) -> None:
-        self._notify(tr("Scyrox S-App is up to date ({v})", v=__version__))
+        w = self._answer_window()
+        if w is not None:
+            w.show_note(tr("Up to date ({v})", v=__version__), ok=True)
+        else:
+            self._notify(tr("Scyrox S-App is up to date ({v})", v=__version__))
 
-    def _on_update_failed(self, stage: str, _error: str) -> None:
+    def _on_update_failed(self, stage: str, error: str) -> None:
         self._show_update()
-        self._notify(tr("Could not download the update") if stage == "download"
-                     else tr("Could not check for updates"), warning=True)
+        text = tr("Could not download the update") if stage == "download" else tr("Could not check for updates")
+        w = self._answer_window() if stage == "check" else (self.window if self.window and self.window.isVisible() else None)
+        if w is not None:
+            w.show_note(text, ok=False, detail=error)
+        else:
+            self._notify(text, warning=True)
 
     def _on_balloon_clicked(self) -> None:
         if self._balloon == "update":

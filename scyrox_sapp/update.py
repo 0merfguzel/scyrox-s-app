@@ -107,7 +107,7 @@ class UpdateChecker(QObject):
 
     def __init__(self) -> None:
         super().__init__()
-        self._busy = False
+        self._busy = ""               # sürmekte olan iş: "check" | "download" | ""
         self._manual = False
         self._result.connect(self._deliver)
 
@@ -115,15 +115,19 @@ class UpdateChecker(QObject):
         return prefs.auto_update() and time.time() - prefs.last_update_check() >= CHECK_EVERY_S
 
     def check(self, manual: bool = False) -> None:
+        if self._busy == "check":
+            # Otomatik denetim sürerken elle istendi: yenisini başlatma, sonucu bildir.
+            self._manual = self._manual or manual
+            return
         if self._busy:
             return
-        self._busy, self._manual = True, manual
+        self._busy, self._manual = "check", manual
         self._run("check", latest_release)
 
     def fetch(self, release: Release) -> None:
         if self._busy or not release.setup_url:
             return
-        self._busy = True
+        self._busy = "download"
         self._run("download", lambda: download(release.setup_url))
 
     def _run(self, kind: str, job) -> None:
@@ -135,7 +139,7 @@ class UpdateChecker(QObject):
         threading.Thread(target=work, daemon=True).start()
 
     def _deliver(self, kind: str, value) -> None:
-        self._busy = False
+        self._busy = ""
         if kind == "check":
             prefs.set_last_update_check(time.time())
             if value is not None and is_newer(value.version):

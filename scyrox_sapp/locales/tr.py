@@ -114,4 +114,6 @@ STRINGS = {
     'Scyrox S-App is up to date ({v})': 'Scyrox S-App güncel ({v})',
     'Could not check for updates': 'Güncellemeler denetlenemedi',
     'Could not download the update': 'Güncelleme indirilemedi',
+    'Up to date ({v})': 'Güncel ({v})',
+    'Version {v} is available. Install now?': '{v} sürümü çıktı. Şimdi kurulsun mu?',
 }
