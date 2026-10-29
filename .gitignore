@@ -1,0 +1,20 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# VS Code settings
+.vscode/
+
+# Derleme ara dosyaları (packaging/build.py)
+build/
+
+# Yalnızca geliştiricinin bilgisayarında: ürün fotoğrafları, tek seferlik ikon aracı
+do-not-ship/
