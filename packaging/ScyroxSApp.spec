@@ -32,8 +32,12 @@ a = Analysis(  # noqa: F821
     [os.path.join(ROOT, "ScyroxSApp.pyw")],
     pathex=[ROOT],
     datas=[(os.path.join(ROOT, "assets", "icons"), os.path.join("assets", "icons"))],
-    # Geliştirme ortamında kurulu ama uygulamanın kullanmadığı büyük paketler
-    excludes=["numpy", "cv2", "PIL", "tkinter", "PyInstaller"],
+    # Geliştirme ortamında kurulu ama uygulamanın kullanmadığı büyük paketler. İkinci
+    # satırdakileri truststore yalnızca isteğe bağlı (çağırmadığımız) işlevlerinde içe
+    # aktarır; PyInstaller yine de izleyip ~9 MB ekliyordu.
+    excludes=["numpy", "cv2", "PIL", "tkinter", "PyInstaller",
+              "requests", "urllib3", "cryptography", "certifi", "charset_normalizer", "cffi", "idna",
+              "OpenSSL"],
     noarchive=False,
 )
 # Qt'nin bu uygulamada kullanılmayan büyük parçaları: yazılım OpenGL'i (20 MB,

@@ -9,9 +9,11 @@ kapatır, günceller ve yeniden açar.
 
 from __future__ import annotations
 
+import functools
 import json
 import os
 import re
+import ssl
 import sys
 import tempfile
 import threading
@@ -49,12 +51,29 @@ def is_newer(remote: str, local: str = __version__) -> bool:
     return parse_version(remote) > parse_version(local)
 
 
+@functools.cache
+def ssl_context() -> ssl.SSLContext:
+    """Sertifikayı Windows doğrulasın (truststore; pip de bunu kullanır).
+
+    Python'un kendi doğrulaması yalnızca Windows sertifika deposunda o an
+    bulunanlara bakar. Windows kök sertifikaların çoğunu ilk gerektiğinde
+    indirir; yeni kurulmuş bir bilgisayarda GitHub'ın kökü henüz yoksa Python
+    "unable to get local issuer certificate" der, tarayıcı ise sorunsuz bağlanır.
+    truststore doğrulamayı Windows'a yaptırır: eksik kök tarayıcıdaki gibi
+    indirilir, iş yeri / antivirüs sertifikaları da tanınır."""
+    try:
+        import truststore
+    except ImportError:                 # kaynaktan çalışırken kurulu değilse
+        return ssl.create_default_context()
+    return truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+
+
 def _get(url: str) -> bytes:
     req = urllib.request.Request(url, headers={
         "Accept": "application/vnd.github+json",
         "User-Agent": f"ScyroxSApp/{__version__}",
     })
-    with urllib.request.urlopen(req, timeout=TIMEOUT_S) as resp:
+    with urllib.request.urlopen(req, timeout=TIMEOUT_S, context=ssl_context()) as resp:
         return resp.read()
 
 
@@ -78,7 +97,7 @@ def download(url: str) -> str:
     """Kurulum dosyasını geçici klasöre indir, yolunu döndür."""
     req = urllib.request.Request(url, headers={"User-Agent": f"ScyroxSApp/{__version__}"})
     path = os.path.join(tempfile.gettempdir(), os.path.basename(url.split("?")[0]) or "ScyroxSApp-Setup.exe")
-    with urllib.request.urlopen(req, timeout=60) as resp, open(path, "wb") as f:
+    with urllib.request.urlopen(req, timeout=60, context=ssl_context()) as resp, open(path, "wb") as f:
         while chunk := resp.read(1 << 16):
             f.write(chunk)
     if os.path.getsize(path) < 1_000_000:          # yarım kalmış / hatalı indirme

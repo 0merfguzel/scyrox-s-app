@@ -44,6 +44,24 @@ class ReleaseTests(unittest.TestCase):
             self.assertIsNone(U.latest_release())
 
 
+class TlsTests(unittest.TestCase):
+    def test_windows_verifies_certificates(self):
+        """Sertifika doğrulaması Windows'ta (truststore): yeni kurulmuş bilgisayarda
+        eksik kök sertifika yüzünden "unable to get local issuer certificate" olmasın."""
+        import truststore
+        ctx = U.ssl_context()
+        self.assertIsInstance(ctx, truststore.SSLContext)
+        self.assertTrue(ctx.check_hostname)
+        self.assertEqual(ctx.verify_mode, U.ssl.CERT_REQUIRED)
+
+    def test_requests_use_that_context(self):
+        resp = mock.MagicMock()
+        resp.__enter__.return_value.read.return_value = b"{}"
+        with mock.patch.object(U.urllib.request, "urlopen", return_value=resp) as urlopen:
+            U._get(U.API_URL)
+        self.assertIs(urlopen.call_args.kwargs["context"], U.ssl_context())
+
+
 class SelfInstallTests(unittest.TestCase):
     def test_only_installed_exe_updates_itself(self):
         with mock.patch.object(U.sys, "frozen", False, create=True):
