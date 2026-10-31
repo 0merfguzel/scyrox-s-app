@@ -20,7 +20,7 @@ from . import update
 from .demo import DemoService
 from .hotplug import HotplugWatcher
 from .i18n import tr
-from .icons import battery_icon, gear_icon, model_icon
+from .icons import battery_icon, gear_icon, model_icon, tray_icon
 from .models import LOD_OPTIONS, SLEEP_OPTIONS, sleep_label
 from .paths import data_dir
 from .service import DeviceService
@@ -60,7 +60,8 @@ class Tray:
         self._balloon = ""                                # son bildirimin türü (tıklanınca)
         self._from_window = False                         # denetim ayarlar penceresinden istendi
 
-        self.tray = QSystemTrayIcon(model_icon(None))
+        self.tray = QSystemTrayIcon()
+        self._set_icon(model_icon(None))
         self.tray.activated.connect(self._on_activated)
         self.tray.messageClicked.connect(self._on_balloon_clicked)
         self.updater = update.UpdateChecker()
@@ -79,6 +80,7 @@ class Tray:
         self.svc.message.connect(self._on_message)
         self._on_device(None)
         self.tray.show()
+        self._watch_screens()
         self.hotplug = HotplugWatcher(self.svc.scan)
         self.svc.start(fallback_scan=not self.hotplug.active)
 
@@ -327,9 +329,29 @@ class Tray:
             return f"{name}  ·  " + tr("Battery {p}%", p=self.last_battery.percent)
         return f"{name}  " + tr("(click for battery)")
 
+    def _set_icon(self, icon) -> None:
+        """Tepsi ikonu, tepsinin gerçekten kullandığı piksel boyutunda (bkz. icons.tray_px)."""
+        self._icon = icon
+        self.tray.setIcon(tray_icon(icon))
+
+    def _watch_screens(self) -> None:
+        """Monitör takılıp çıkarılınca, ana ekran ya da ölçek değişince tepsi ikonu
+        yeni boyutta yeniden verilsin (Qt kendiliğinden yeniden istemiyor)."""
+        def again(*_):
+            self._set_icon(self._icon)
+
+        def watch(screen):
+            screen.logicalDotsPerInchChanged.connect(again)
+            screen.physicalDotsPerInchChanged.connect(again)
+        for screen in QGuiApplication.screens():
+            watch(screen)
+        QGuiApplication.instance().screenAdded.connect(lambda sc: (watch(sc), again()))
+        QGuiApplication.instance().screenRemoved.connect(again)
+        QGuiApplication.instance().primaryScreenChanged.connect(again)
+
     def _show_idle(self) -> None:
         icon = model_icon(self.ident.model if self.ident else None)
-        self.tray.setIcon(icon)
+        self._set_icon(icon)
         self.app.setWindowIcon(icon)   # pencereler, uyarı kutuları, görev çubuğu
         self.tray.setToolTip(self._tooltip())
 
@@ -346,10 +368,10 @@ class Tray:
             self.last_battery = b
             self.batt_act.setText(battery_text(b))
             if clicked or self.revert.isActive():
-                self.tray.setIcon(battery_icon(b.percent))
+                self._set_icon(battery_icon(b.percent))
             self.tray.setToolTip(self._tooltip())
         elif clicked:
-            self.tray.setIcon(battery_icon(None))
+            self._set_icon(battery_icon(None))
             self.tray.setToolTip(str(b))
         if clicked:
             self.revert.start(SHOW_BATTERY_MS)

@@ -12,9 +12,9 @@ import sys
 from functools import lru_cache
 from typing import Optional
 
-from PyQt6.QtCore import QRectF, Qt
-from PyQt6.QtGui import (QColor, QFont, QIcon, QIconEngine, QImage, QPainter, QPainterPath, QPen,
-                         QPixmap)
+from PyQt6.QtCore import QRectF, QSize, Qt
+from PyQt6.QtGui import (QColor, QFont, QFontDatabase, QGuiApplication, QIcon, QIconEngine, QImage, QPainter,
+                         QPainterPath, QPen, QPixmap, QTransform)
 
 from .models import COLORS, ModelInfo
 
@@ -213,107 +213,84 @@ def gear_icon(rgb: int) -> QIcon:
     return QIcon(pm)
 
 
-# ---- piksel hizalı pil ikonu ---------------------------------------------
+# ---- pil ikonu -------------------------------------------------------------
 #
-# Tepsi ikonu ekran ölçeğine göre 16, 20 (%125), 24 (%150), 32 (%200)…
-# piksel olur. Büyük çizip küçültmek bulanıklaştırır; bu yüzden ikon, Qt
-# hangi gerçek piksel boyutunu isterse tam o boyutta, yumuşatmasız ve tam
-# sayı koordinatlarla çizilir. Tahoma Bold küçük boyutta yumuşatmasız
-# gösterim için tasarlanmış bir yazı tipi.
+# Kare çerçeve (rengi yüzdeye göre), koyu zemin, beyaz rakamlar. Rakamlar
+# yazı tipinin gerçek çizgileriyle (QPainterPath), ikonun istendiği tam piksel
+# boyutunda ve kenar yumuşatmasıyla çizilir; büyütüp küçültme yok.
+#   - Yükseklik "88"e göre: 5 de 40 da aynı boyda; "100" kendine göre.
+#   - Üstte / altta ve sağda / solda kalan boşluklar eşit: yükseklik ve genişlik
+#     buna göre tam piksel seçilir; gerekirse rakamlar yatayda biraz sıkışır.
+#   - Rakamlar arasında yazı tipinin boşluğu değil, tam 1 piksel (16-31 px) boşluk.
+# Bahnschrift (Windows 10+) dar rakamlıdır, kutuyu iyi doldurur.
 
-BATTERY_FONTS = ("Tahoma", "Verdana", "Arial")
+BATTERY_FONTS = [("Bahnschrift", "SemiBold SemiCondensed"), ("Segoe UI", "Semibold"), ("Arial", "Bold")]
 _BG = QColor(20, 20, 24)
+_MIN_SX, _MAX_SX = 0.88, 1.12          # yatay sıkıştırma / açma sınırı
 
 
-def _ink_bbox(img: QImage) -> Optional[tuple[int, int, int, int]]:
-    """Boyanmış piksellerin sınırı: (x, y, w, h)."""
-    a = img.convertToFormat(QImage.Format.Format_Alpha8)
-    w, h, bpl = a.width(), a.height(), a.bytesPerLine()
-    data = a.constBits().asstring(bpl * h)
-    top = left = None
-    bottom, right = -1, -1
-    for y in range(h):
-        row = data[y * bpl:y * bpl + w]
-        stripped = row.lstrip(b"\0")
-        if not stripped:
-            continue
-        top = y if top is None else top
-        bottom = y
-        x0 = w - len(stripped)
-        x1 = len(row.rstrip(b"\0")) - 1
-        left = x0 if left is None else min(left, x0)
-        right = max(right, x1)
-    if top is None:
-        return None
-    return left, top, right - left + 1, bottom - top + 1
-
-
-@lru_cache(maxsize=512)
-def _glyph(ch: str, px: int) -> tuple[QImage, tuple[int, int, int, int]]:
-    """Tek karakter, ortak taban çizgisinde: (resim, boyalı alan x, y, w, h)."""
+@lru_cache(maxsize=64)
+def _text_path(text: str) -> QPainterPath:
+    """Yazının 200 px'lik çizgisi (ölçü için büyük; sonra ölçeklenir)."""
     font = QFont()
-    font.setFamilies(list(BATTERY_FONTS))
-    font.setPixelSize(px)
-    font.setBold(True)
-    font.setStyleStrategy(QFont.StyleStrategy.NoAntialias)
-    font.setHintingPreference(QFont.HintingPreference.PreferFullHinting)
-    img = QImage(px * 2, px * 2, QImage.Format.Format_ARGB32_Premultiplied)
-    img.fill(Qt.GlobalColor.transparent)
-    p = QPainter(img)
-    p.setFont(font)
-    p.setPen(QColor("white"))
-    p.drawText(px // 2, px * 3 // 2, ch)
-    p.end()
-    return img, _ink_bbox(img) or (0, 0, 0, 0)
+    for family, style in BATTERY_FONTS:
+        if family in QFontDatabase.families():
+            font = QFontDatabase.font(family, style, 12)
+            break
+    font.setPixelSize(200)
+    font.setHintingPreference(QFont.HintingPreference.PreferNoHinting)
+    path = QPainterPath()
+    path.addText(0, 0, font, text)
+    return path
 
 
-def _layout(text: str, px: int, gap: int) -> tuple[int, int, int]:
-    """Karakterler arasında tam `gap` piksel boşlukla dizildiğinde
-    (genişlik, üst, yükseklik)."""
-    boxes = [_glyph(c, px)[1] for c in text]
-    width = sum(b[2] for b in boxes) + gap * (len(text) - 1)
-    top = min(b[1] for b in boxes)
-    return width, top, max(b[1] + b[3] for b in boxes) - top
-
-
-def _fit_px(sample: str, avail: int, gap: int) -> int:
-    for px in range(avail * 2, 3, -1):
-        w, _top, h = _layout(sample, px, gap)
-        if w <= avail and h <= avail:
-            return px
-    return 4
+def _ink_width(text: str, scale: float) -> float:
+    return sum(_text_path(c).boundingRect().width() for c in text) * scale
 
 
 @lru_cache(maxsize=256)
 def _battery_image(text: str, rgb: int, size: int) -> QImage:
     border = max(1, size // 16)            # 16-31 px: 1, 32-47 px: 2 …
-    gap = max(1, size // 24)               # rakamlar arası boşluk
-    avail = size - 2 * border - 2          # çerçeveyle yazı arasında 1 px boşluk
-    # Yazı boyutu sayıya göre değil ikon boyutuna göre seçilir: "5" de "49"
-    # da aynı yükseklikte görünür. Yalnızca "100" sığması için küçülür.
-    if len(text) > 2:
-        # "100": 20 px'e kadar yer dar, okunur kalsın diye çerçeveye kadar uzanır;
-        # daha büyük boyutlarda 1 px boşluk kalır.
-        px = _fit_px("100", avail + 2 if size <= 20 else avail, gap)
-    else:
-        px = _fit_px("88", avail, gap)
-    width, top, height = _layout(text, px, gap)
+    inner = size - 2 * border
+    gap = border                           # rakamlar arası
+    avail = inner - 2 * border             # çerçeveyle rakamlar arasında da aynı pay
+    gaps = gap * (len(text) - 1)
+    eight = _text_path("8").boundingRect()
+    ref, min_sx = (text, _MIN_SX) if len(text) > 2 else ("88", 1.0)
+    h = avail
+    for h in range(avail, 3, -1):          # boş satır sayısı çift: üst ve alt boşluk eşit
+        if (inner - h) % 2 == 0 and _ink_width(ref, h / eight.height()) * min_sx + gap * (len(ref) - 1) <= avail:
+            break
+    scale = h / eight.height()
+    baseline = border + (inner - h) // 2 - eight.top() * scale
+    ink = _ink_width(text, scale)
+    fits = [w for w in range(1, avail + 1)  # boş sütun sayısı çift: sağ ve sol boşluk eşit
+            if (inner - w) % 2 == 0 and _MIN_SX <= (w - gaps) / ink <= _MAX_SX]
+    width = min(fits, key=lambda w: abs(w - ink - gaps)) if fits else min(ink + gaps, avail)
+    sx = (width - gaps) / ink
 
     out = QImage(size, size, QImage.Format.Format_ARGB32_Premultiplied)
     out.fill(QColor.fromRgb(rgb))
     p = QPainter(out)
-    p.fillRect(border, border, size - 2 * border, size - 2 * border, _BG)
-    x = (size - width) // 2
-    y = (size - height) // 2
+    p.fillRect(border, border, inner, inner, _BG)
+    p.setRenderHint(QPainter.RenderHint.Antialiasing)
+    p.setPen(Qt.PenStyle.NoPen)
+    p.setBrush(QColor("white"))
+    x = border + (inner - width) / 2
     for c in text:
-        img, (gx, _gy, gw, _gh) = _glyph(c, px)
-        p.drawImage(x, y, img.copy(gx, top, gw, height))
-        x += gw + gap
+        path = _text_path(c)
+        box = path.boundingRect()
+        t = QTransform()
+        t.translate(x, baseline)
+        t.scale(scale * sx, scale)
+        t.translate(-box.left(), 0)
+        p.drawPath(t.map(path))
+        x += box.width() * scale * sx + gap
     p.end()
     return out
 
 
-class _PixelIconEngine(QIconEngine):
+class _BatteryIconEngine(QIconEngine):
     """Her istenen boyut için tam o piksel sayısında çizen ikon motoru."""
 
     def __init__(self, text: str, color: QColor) -> None:
@@ -337,10 +314,58 @@ class _PixelIconEngine(QIconEngine):
         painter.drawPixmap(rect.topLeft(), self._pixmap(round(rect.width() * dpr), dpr))
 
     def clone(self):
-        return _PixelIconEngine(self.text, self.color)
+        return _BatteryIconEngine(self.text, self.color)
 
 
 def battery_icon(percent: Optional[int]) -> QIcon:
     """Kare, içinde pil yüzdesi yazan tepsi ikonu."""
     text = "!" if percent is None else str(percent)
-    return QIcon(_PixelIconEngine(text, battery_color(percent)))
+    return QIcon(_BatteryIconEngine(text, battery_color(percent)))
+
+
+# ---- tepsi ikonu boyutu ----------------------------------------------------
+#
+# Qt tepsi ikonunu tüm ekranların en yüksek ölçeğine göre ister (örn. %100
+# monitör + %125 laptop: 20 px). Tepsi ise ana ekranın görev çubuğundadır ve
+# orada 16 px gösterilir; Windows 20 px'lik ikonu 16'ya küçültürken rakamlar
+# yarım piksel kayıp bulanıklaşıyordu. Bu yüzden tepsiye tam kullanılacak
+# boyutta ikon verilir.
+
+def tray_px() -> int:
+    """Tepsinin gerçekten kullandığı küçük ikon boyutu (ana ekranın ölçeğinde)."""
+    screen = QGuiApplication.primaryScreen()
+    dpi = round(96 * (screen.devicePixelRatio() if screen else 1.0))
+    if sys.platform == "win32":
+        try:
+            import ctypes
+            return ctypes.windll.user32.GetSystemMetricsForDpi(49, dpi)    # SM_CXSMICON
+        except (AttributeError, OSError):
+            pass
+    return round(16 * dpi / 96)
+
+
+class _TrayIconEngine(QIconEngine):
+    """Başka bir ikonu, Qt hangi boyutu isterse istesin tepsinin boyutunda verir."""
+
+    def __init__(self, icon: QIcon) -> None:
+        super().__init__()
+        self.icon = QIcon(icon)
+
+    def scaledPixmap(self, size, mode, state, scale):  # noqa: N802 - Qt adı
+        px = tray_px()
+        pm = self.icon.pixmap(QSize(px, px), 1.0, mode, state)
+        pm.setDevicePixelRatio(px / max(1, size.width()))
+        return pm
+
+    def pixmap(self, size, mode, state):
+        return self.icon.pixmap(size, 1.0, mode, state)
+
+    def paint(self, painter, rect, mode, state):
+        self.icon.paint(painter, rect, Qt.AlignmentFlag.AlignCenter, mode, state)
+
+    def clone(self):
+        return _TrayIconEngine(self.icon)
+
+
+def tray_icon(icon: QIcon) -> QIcon:
+    return QIcon(_TrayIconEngine(icon))
